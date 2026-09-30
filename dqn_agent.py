@@ -1,9 +1,3 @@
-"""
-Custom PyTorch DQN implementation for the Microgrid Energy Management project.
-Replaces Stable-Baselines3's DQN with a from-scratch version so every part
-of the algorithm (network, replay buffer, target network updates, training
-step) is written and understood by you.
-"""
 
 import random
 from collections import deque

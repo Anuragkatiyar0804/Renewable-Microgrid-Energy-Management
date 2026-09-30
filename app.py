@@ -1,12 +1,3 @@
-"""
-Streamlit dashboard for the Microgrid DRL Energy Management project.
-
-Run locally with:
-    streamlit run app.py
-
-Deploy for free by pushing this repo to GitHub and connecting it at
-https://share.streamlit.io (Streamlit Community Cloud).
-"""
 
 import streamlit as st
 import numpy as np
@@ -23,7 +14,7 @@ st.caption(
     "Deep Q-Network agent vs. a threshold-based rule EMS, simulated over a 24-hour day "
     "with solar generation, battery storage, and time-of-use grid pricing."
 )
-
+st.warning("This dashboard runs on the simulator. On real data the DQN performs about the same as a simple solar-first rule (up to about 1% better with a forecast). See the README for the real-data results.")
 ACTION_NAMES = {0: "Charge", 1: "Discharge", 2: "Idle"}
 
 with st.sidebar:
@@ -77,7 +68,7 @@ if run_button:
     col1, col2, col3 = st.columns(3)
     col1.metric("DQN daily cost", f"${dqn_total_cost:.3f}")
     col2.metric("Rule-based daily cost", f"${rule_total_cost:.3f}")
-    col3.metric("Cost improvement", f"{improvement:+.1f}%")
+    col3.metric("Cost improvement (simulator only)", f"{improvement:+.1f}%")
 
     st.subheader("Battery State of Charge")
     soc_compare = pd.DataFrame({
