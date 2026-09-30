@@ -17,6 +17,7 @@ All costs are grid cost per day in rupees (₹), measured on **66 unseen test da
 | Peak/off-peak what-if + same-day forecast | 14.71 | 12.01 | **11.87 ± 0.06** |
 
 A perfect-foresight plan on the peak/off-peak tariff costs ₹10.81 per day, so the best possible saving over always-discharge is 10.0%.
+
 ![Real-data comparison of grid cost per day](results/real_data_comparison.png)
 
 **What this means, in plain words**
@@ -198,12 +199,13 @@ That is a 90% lower cost, but it is a **simulation-only** number, and the absolu
 | `train_eval_year.py` | Shared data pipeline (loads data, builds the split) and the real-data environment. Its own run is the superseded full-year test from step 4 |
 | `train_eval_flat.py` | Flat tariff experiment with both baselines (step 6) |
 | `train_eval_tod.py` | Peak/off-peak what-if (step 7) |
+| `show_results.py` | Loads the saved models and prints the results table and chart in about a minute, without retraining |
 | `oracle_tod.py` | Perfect-foresight ceiling (step 8) |
 | `train_eval_tod_forecast.py` | DQN with a same-day forecast (step 9) |
 | `app.py` | Streamlit dashboard (simulator only) |
 | `lucknow_solar_2024.csv`, `household_load_all.csv` | Real data files |
 | `models/` | Trained models and the training curve |
-| `results/` | Comparison plots from the original simulator evaluation |
+| `results/` | Simulator comparison plot and `real_data_comparison.png` (the real-data chart) |
 
 The original simulator scripts (`train_agent.py` and `evaluate.py`) were replaced by the real-data scripts above; they remain in the early commits of this repository.
 
@@ -214,6 +216,14 @@ python -m venv venv
 venv\Scripts\activate            # source venv/bin/activate on Linux/Mac
 pip install -r requirements.txt  # includes torch, numpy, pandas, matplotlib, streamlit, ucimlrepo
 ```
+
+**Quick check without retraining.** The repository includes the data files and the trained models, so after installing the requirements you can print the results table and save the chart in about a minute:
+
+```bash
+python show_results.py
+```
+
+To rebuild everything from scratch, follow the steps below.
 
 1. **Download the solar data** by opening this link in a browser and saving the file as `lucknow_solar_2024.csv` in the project folder (the scripts skip its 9 header lines):
 
