@@ -265,4 +265,5 @@ To rebuild everything from scratch, follow the steps below.
 
 ## 13. Tools
 
-Python, PyTorch, NumPy, Pandas, Matplotlib, Streamlit. Data: NASA POWER (solar) and the UCI Machine Learning Repository (household load).
+Python, PyTorch, NumPy, Pandas, Matplotlib, Streamlit. Data: NASA POWER (solar) and the UCI Machine Learning Repository (household load).#   m i c r o g r i d  
+ 
