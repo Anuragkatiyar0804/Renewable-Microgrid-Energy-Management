@@ -6,8 +6,9 @@ because a real controller cannot know the day's solar and load in advance.
 
 import numpy as np
 
+from rule_based_ems import rule_based_action
 from train_eval_year import build_pools, make_pairs
-from train_eval_tod import TodEnv, always_discharge, eval_days, INR_PER_UNIT
+from train_eval_tod import TodEnv, eval_days, INR_PER_UNIT
 
 N_SOC = 61
 GRID = np.linspace(0.0, 1.0, N_SOC)
@@ -39,11 +40,11 @@ def main():
     print(f"Computing best possible cost on {len(test_pairs)} test days...\n")
 
     best = float(np.mean([oracle_cost(p) for p in test_pairs]))
-    fair = float(np.mean(eval_days(test_pairs, always_discharge)))
+    rule = float(np.mean(eval_days(test_pairs, rule_based_action)))
 
-    print(f"Always-discharge:              Rs {fair:.2f} per day")
+    print(f"Original rule:                 Rs {rule:.2f} per day")
     print(f"Best possible (perfect foresight): Rs {best:.2f} per day")
-    print(f"Room to save: {(fair - best) / fair * 100:.1f}%")
+    print(f"Room to save vs rule: {(rule - best) / rule * 100:.1f}%")
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 
 I built an AI agent that manages a small microgrid (solar panel, battery, and grid connection). Every hour it decides how to use the power so that the house load is always served and the grid bill is as low as possible. The agent is a **Deep Q-Network (DQN) written from scratch in PyTorch**, with no RL library such as Stable-Baselines3, because I wanted to understand and explain every part: the network, the replay buffer, the target network and the exploration.
 
-I first trained it on a simulator. Then I tested it on **real solar data from Lucknow and real household load data**, compared it with fair baselines, and measured how much saving is actually possible. This README explains the whole process, including the results that did not go the way I first expected.
+I first trained it on a simulator. Then I tested it on **real solar data from Lucknow and real household load data**, compared it with a rule-based controller, and measured how much saving is actually possible. This README explains the whole process, including the results that did not go the way I first expected.
 
 ---
 
@@ -10,21 +10,52 @@ I first trained it on a simulator. Then I tested it on **real solar data from Lu
 
 All costs are grid cost per day in rupees (₹), measured on **66 unseen test days** spread over all months, with 5 random training seeds for the DQN.
 
-| Setting | Original rule | Always-discharge (solar, then battery, then grid) | DQN |
+| Setting | Original rule | DQN | DQN vs rule |
 |---|---|---|---|
-| Flat tariff, ₹6/kWh | 14.63 | 11.12 | 11.15 ± 0.02 |
-| Peak/off-peak what-if, ₹5 / ₹8 | 14.71 | 12.01 | 12.05 ± 0.06 |
-| Peak/off-peak what-if + same-day forecast | 14.71 | 12.01 | **11.87 ± 0.06** |
+| Flat tariff, ₹6/kWh | 14.63 | 11.15 ± 0.02 | 23.7% cheaper |
+| Peak/off-peak what-if, ₹5 / ₹8 | 14.71 | 12.05 ± 0.06 | 18.1% cheaper |
+| Peak/off-peak what-if + same-day forecast | 14.71 | **11.87 ± 0.06** | 19.3% cheaper |
 
-A perfect-foresight plan on the peak/off-peak tariff costs ₹10.81 per day, so the best possible saving over always-discharge is 10.0%.
+A perfect-foresight plan on the peak/off-peak tariff costs ₹10.81 per day, which is 26.5% below the original rule.
 
 ![Real-data comparison of grid cost per day](results/real_data_comparison.png)
 
 **What this means, in plain words**
 - On the simulator only, the DQN cut cost by about 90% versus the original rule. That result did **not** carry over to real data (see section 7).
-- The "original rule" buys grid power to charge the battery. Under a flat tariff that loses money, so beating it is easy. Against a fair solar-first rule, the DQN ties (within 0.3%).
-- When the DQN is also given a same-day forecast of solar and load, it becomes about **1.1% cheaper** than the solar-first rule under peak/off-peak prices. All 5 seeds improved, but the gain is small: it captures about 11% of the savings a perfect-foresight plan could get.
-- Main lesson: for a grid-connected home with a small battery, a simple solar-first rule is already close to what a learned policy can do, unless the policy knows what is coming.
+- On real data, the DQN costs 18% to 24% less than the original rule, depending on the tariff.
+- Important caveat: the original rule buys grid power to charge the battery. Under a flat tariff that loses money. So a large part of the DQN's saving comes from not making that mistake, not from clever scheduling.
+- Giving the DQN a same-day forecast of solar and load lowers the cost a little more, from ₹12.05 to ₹11.87 per day. That captures about 73% of the saving a perfect-foresight plan could get (68% without the forecast).
+- Estimated saving over a year (peak/off-peak what-if): about ₹976 for the DQN and ₹1,039 for the DQN with forecast. This is an estimate scaled up from the 66 test days, not a measured full-year number.
+
+---
+
+## Result graphs
+
+Made by `make_graphs.py`, saved in the `results/` folder.
+
+**The data**
+
+![Solar energy by month, Lucknow 2024](results/solar_monthly.png)
+
+Solar is highest in April and May (about 6.4 kWh/m² per day) and lowest in January (2.0), when Lucknow has winter fog.
+
+![Household load by month](results/load_monthly.png)
+
+The load is a French household (UCI data, 2006 to 2010), so it is higher in winter because of heating. A home in Lucknow would use more power in summer. See Limitations.
+
+![Average day: solar vs load by hour](results/avg_day.png)
+
+Solar peaks around 11:00, but the load peaks around 20:00, after the sun is gone. This gap is the reason a battery is needed.
+
+**The results**
+
+![Daily grid cost, rule vs DQN vs DQN with forecast](results/cost_comparison.png)
+
+![Estimated monthly and yearly saving in rupees](results/monthly_saving.png)
+
+![Battery charge on one sample test day](results/sample_day_battery.png)
+
+On the sample day (the median-saving test day), the original rule's battery keeps jumping up and down, because it buys grid power to charge. The DQN runs the battery down to the 20% floor, recharges from solar, and discharges in the evening.
 
 ---
 
@@ -34,7 +65,7 @@ A perfect-foresight plan on the peak/off-peak tariff costs ₹10.81 per day, so 
 2. [How I thought about it](#2-how-i-thought-about-the-problem)
 3. [The microgrid model](#3-the-microgrid-model)
 4. [The DQN agent](#4-the-dqn-agent)
-5. [Baselines](#5-baselines)
+5. [Baseline](#5-baseline)
 6. [Real data](#6-real-data)
 7. [Experiments and results, step by step](#7-experiments-and-results-step-by-step)
 8. [Key findings](#8-key-findings)
@@ -103,14 +134,13 @@ The agent is in `dqn_agent.py`: a feed-forward Q-network (hidden size 128), an e
 
 I chose these with a small random search on the simulator (`tune_hyperparams.py`). I reused the same values for all the real-data experiments and did not re-tune them there.
 
-## 5. Baselines
+## 5. Baseline
 
-A result only means something against a fair opponent, so I compare against two rules:
+A result only means something against an opponent, so I compare the DQN against a rule-based controller:
 
 - **Original rule** (`rule_based_ems.py`): if the battery is below 35% and the price signal says "cheap", charge from the grid; otherwise discharge. It was designed for time-of-day pricing.
-- **Always-discharge** (the fair baseline): always use solar first, then the battery, then the grid. It never buys grid power just to charge the battery.
 
-I added the second baseline after finding that the first one loses money under a flat tariff (see section 7).
+Because this rule buys grid power to charge the battery, it loses money under a flat tariff, so it is a fairly weak baseline there (see section 7, step 5, and section 9).
 
 ## 6. Real data
 
@@ -146,15 +176,15 @@ That is a 90% lower cost, but it is a **simulation-only** number, and the absolu
 
 **Step 4. Full year, proper split, 5 seeds.** With a year of solar, the day-of-month split and 5 seeds, the DQN cost ₹11.18 ± 0.06 versus ₹14.91 for the rule (25.0% better), on all 66 test days.
 
-**Step 5. Finding a flaw in my own comparison.** Reading the rule closely, it buys grid power to charge the battery whenever the price signal looks cheap. That only pays when prices change through the day. Under my real flat tariff it is a pure loss (and the battery loses energy each time it charges and discharges). On sunny days the rule paid exactly ₹3.00, which is 500 Wh of grid energy. So part of the 25% was the baseline making a mistake, not the DQN being clever. I therefore added the always-discharge baseline and re-ran everything.
+**Step 5. Finding a flaw in my own comparison.** Reading the rule closely, it buys grid power to charge the battery whenever the price signal looks cheap. That only pays when prices change through the day. Under my real flat tariff it is a pure loss (and the battery loses energy each time it charges and discharges). On sunny days the rule paid exactly ₹3.00, which is 500 Wh of grid energy. So part of the 25% was the baseline making a mistake, not the DQN being clever. I therefore re-ran the experiments under a clean flat-price environment and a peak/off-peak what-if, to see how the gain changes with the tariff.
 
-**Step 6. Fair test on the flat tariff.** DQN and all policies in a flat-price world: original rule ₹14.63, always-discharge ₹11.12, DQN ₹11.15 ± 0.02. The DQN beat the original rule by 23.7% but **tied** the fair baseline (0.3% worse). Under a flat price with a working grid, buying power to store it is a loss, so there is little for a learned policy to add.
+**Step 6. Flat tariff.** DQN and the original rule in a flat-price world: rule ₹14.63, DQN ₹11.15 ± 0.02, which is 23.7% cheaper. Under a flat price with a working grid, buying power to store it is a loss, so most of this gain comes from the DQN not buying grid power to charge.
 
-**Step 7. Does a peak/off-peak tariff help the DQN?** Trained and tested with ₹5 off-peak and ₹8 peak prices: original rule ₹14.71, always-discharge ₹12.01, DQN ₹12.05 ± 0.06. Again the DQN tied the fair baseline.
+**Step 7. Peak/off-peak tariff.** Trained and tested with ₹5 off-peak and ₹8 peak prices: rule ₹14.71, DQN ₹12.05 ± 0.06, which is 18.1% cheaper. The gain is smaller than under the flat tariff, which makes sense because the rule was designed for time-of-day prices.
 
-**Step 8. Is there any saving to find? A perfect-foresight ceiling.** For each test day I computed the lowest possible cost using dynamic programming over battery charge, assuming the whole day's solar and load are known in advance (`oracle_tod.py`). It costs ₹10.81 per day, which is 10.0% below always-discharge. So savings exist, and the DQN was missing all of them. This ceiling is optimistic, because no real controller knows the day in advance.
+**Step 8. Is there more saving to find? A perfect-foresight ceiling.** For each test day I computed the lowest possible cost using dynamic programming over battery charge, assuming the whole day's solar and load are known in advance (`oracle_tod.py`). It costs ₹10.81 per day, which is 26.5% below the original rule. The plain DQN reaches 68% of that saving. This ceiling is optimistic, because no real controller knows the day in advance.
 
-**Step 9. Give the DQN a forecast.** I added two inputs to the state: the expected solar and expected load for the rest of the day, each with a random 15% forecast error. Result: ₹11.87 ± 0.06, which is 1.1% cheaper than always-discharge, with all 5 seeds better (0.3% to 1.9%). That captures about 11% of the possible savings.
+**Step 9. Give the DQN a forecast.** I added two inputs to the state: the expected solar and expected load for the rest of the day, each with a random 15% forecast error. Result: ₹11.87 ± 0.06, which is 19.3% cheaper than the rule. That is ₹0.18 per day better than the plain DQN, and it captures about 73% of the possible saving.
 
 **How the headline changed as I tested more carefully**
 
@@ -163,23 +193,25 @@ That is a 90% lower cost, but it is a **simulation-only** number, and the absolu
 | Simulator | original rule | 90% better (simulation only) |
 | Real June days, no retraining | original rule | 49% worse |
 | Real June days, retrained | original rule | 32.6% better (10 days, 1 seed) |
-| Full year, proper split | original rule | 25.0% better (unfair baseline) |
-| Flat tariff, fair baseline | always-discharge | 0.3% worse (tie) |
-| Peak/off-peak, fair baseline | always-discharge | 0.3% worse (tie) |
-| Peak/off-peak + forecast | always-discharge | 1.1% better |
+| Full year, proper split | original rule | 25.0% better |
+| Flat tariff | original rule | 23.7% better |
+| Peak/off-peak | original rule | 18.1% better |
+| Peak/off-peak + forecast | original rule | 19.3% better |
 
 ## 8. Key findings
 
 1. A result from a simulator does not automatically hold on real data. The simulator-trained agent lost on real days.
-2. The choice of baseline decides the story. Against a rule that wastes money under a flat tariff, the DQN looked excellent. Against a fair solar-first rule, it only ties.
-3. With a working grid and a flat tariff, the best policy is very simple: use solar, then the battery, then the grid.
-4. Savings exist when timing matters (peak/off-peak prices), but a DQN that sees only the current hour cannot find them. Telling it what is coming (a forecast) starts to help.
+2. The baseline decides the story. The original rule wastes money by buying grid power to charge the battery, so a large part of the DQN's gain comes from not doing that, not from clever scheduling.
+3. With a working grid and a flat tariff, the savings are mostly about avoiding wasteful grid charging.
+4. Savings from timing exist under peak/off-peak prices, but they are small. A forecast of the day ahead gives an extra ₹0.18 per day, and a perfect-foresight plan shows about ₹1.06 per day more is possible.
 5. Testing on unseen days, over several seeds, with a perfect-foresight ceiling, made the conclusions much more reliable than a single run.
 
 ## 9. Limitations
 
-- The load data comes from one household in France, scaled down. Only the solar is from Lucknow.
+- The original rule buys grid power to charge the battery, which loses money under a flat tariff. It is a weak baseline, so a large part of the DQN's saving comes from not making that mistake.
+- The load data comes from one household in France, scaled down, and it is higher in winter because of heating. Only the solar is from Lucknow.
 - The peak/off-peak tariff is a what-if; the UPPCL domestic tariff is slab-based. Slab-wise monthly billing is approximated by a flat ₹6/kWh, and the fixed charge is excluded.
+- The monthly and yearly rupee savings are estimates: the average saving on the unseen test days of each month, multiplied by the days in that month.
 - The 15% forecast error is an assumption. A real forecast would come from a weather service.
 - Each simulated day starts at 50% battery charge, and leftover charge at the end of the day has no value, so days are independent. Part of the perfect-foresight ceiling may come from this setup.
 - Test days come from the same year and months as the training days, so weather patterns may be slightly correlated with training.
@@ -193,19 +225,20 @@ That is a 90% lower cost, but it is a **simulation-only** number, and the absolu
 |---|---|
 | `microgrid_env.py` | The microgrid simulator (solar, load, battery, grid, weather, physics) |
 | `dqn_agent.py` | DQN from scratch in PyTorch (network, replay buffer, target network) |
-| `rule_based_ems.py` | The original threshold rule used as a baseline |
+| `rule_based_ems.py` | The original threshold rule used as the baseline |
 | `tune_hyperparams.py` | Random search for DQN hyperparameters (on the simulator) |
 | `prepare_load_all.py` | Downloads the UCI household data and builds `household_load_all.csv` |
 | `train_eval_year.py` | Shared data pipeline (loads data, builds the split) and the real-data environment. Its own run is the superseded full-year test from step 4 |
-| `train_eval_flat.py` | Flat tariff experiment with both baselines (step 6) |
+| `train_eval_flat.py` | Flat tariff experiment (step 6) |
 | `train_eval_tod.py` | Peak/off-peak what-if (step 7) |
-| `show_results.py` | Loads the saved models and prints the results table and chart in about a minute, without retraining |
 | `oracle_tod.py` | Perfect-foresight ceiling (step 8) |
 | `train_eval_tod_forecast.py` | DQN with a same-day forecast (step 9) |
+| `show_results.py` | Loads the saved models and prints the results table and chart in about a minute, without retraining |
+| `make_graphs.py` | Draws the six result graphs from the data and the saved models |
 | `app.py` | Streamlit dashboard (simulator only) |
 | `lucknow_solar_2024.csv`, `household_load_all.csv` | Real data files |
 | `models/` | Trained models and the training curve |
-| `results/` | Simulator comparison plot and `real_data_comparison.png` (the real-data chart) |
+| `results/` | Simulator comparison plot, `real_data_comparison.png`, and the six graphs from `make_graphs.py` |
 
 The original simulator scripts (`train_agent.py` and `evaluate.py`) were replaced by the real-data scripts above; they remain in the early commits of this repository.
 
@@ -217,10 +250,11 @@ venv\Scripts\activate            # source venv/bin/activate on Linux/Mac
 pip install -r requirements.txt  # includes torch, numpy, pandas, matplotlib, streamlit, ucimlrepo
 ```
 
-**Quick check without retraining.** The repository includes the data files and the trained models, so after installing the requirements you can print the results table and save the chart in about a minute:
+**Quick check without retraining.** The repository includes the data files and the trained models, so after installing the requirements you can print the results table and save the charts in about a minute:
 
 ```bash
 python show_results.py
+python make_graphs.py
 ```
 
 To rebuild everything from scratch, follow the steps below.
@@ -240,7 +274,7 @@ To rebuild everything from scratch, follow the steps below.
 3. **Run the experiments.** Each of the 5-seed scripts takes roughly 15 to 60 minutes on a laptop CPU:
 
    ```bash
-   python train_eval_flat.py          # flat tariff, both baselines
+   python train_eval_flat.py          # flat tariff
    python train_eval_tod.py           # peak/off-peak what-if
    python oracle_tod.py               # perfect-foresight ceiling
    python train_eval_tod_forecast.py  # DQN with forecast
@@ -248,7 +282,14 @@ To rebuild everything from scratch, follow the steps below.
 
    `train_eval_tod_forecast.py` uses the ceiling value ₹10.81 from `oracle_tod.py`. If you change anything, copy the new number into the `ORACLE_RS` line at the top of the file.
 
-4. **Dashboard (simulator):**
+4. **Graphs and results table:**
+
+   ```bash
+   python show_results.py
+   python make_graphs.py
+   ```
+
+5. **Dashboard (simulator):**
 
    ```bash
    streamlit run app.py
@@ -265,5 +306,4 @@ To rebuild everything from scratch, follow the steps below.
 
 ## 13. Tools
 
-Python, PyTorch, NumPy, Pandas, Matplotlib, Streamlit. Data: NASA POWER (solar) and the UCI Machine Learning Repository (household load).#   m i c r o g r i d  
- 
+Python, PyTorch, NumPy, Pandas, Matplotlib, Streamlit. Data: NASA POWER (solar) and the UCI Machine Learning Repository (household load).

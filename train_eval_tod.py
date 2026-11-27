@@ -1,7 +1,7 @@
 """
 What-if test: time-of-day tariff (Rs 5 off-peak, Rs 8 peak 09:00-21:00).
 NOT the current UPPCL domestic tariff. Shows when RL should help.
-Baselines: original rule EMS (designed for time-of-day prices) and always-discharge.
+Baseline: original rule EMS (designed for time-of-day prices).
 """
 
 import os
@@ -21,10 +21,6 @@ class TodEnv(RealEnv):
         super().__init__(solar_pool, load_pool, seed=seed, fixed=fixed)
         self.price_peak = 0.16
         self.price_offpeak = 0.10
-
-
-def always_discharge(state):
-    return 1
 
 
 def day_cost(env, policy):
@@ -48,9 +44,7 @@ def main():
     print(f"Validation days: {len(val_pairs)} | Test days: {len(test_pairs)}\n")
 
     orig_avg = float(np.mean(eval_days(test_pairs, rule_based_action)))
-    fair_avg = float(np.mean(eval_days(test_pairs, always_discharge)))
-    print(f"Original rule (time-of-day aware): Rs {orig_avg:.2f} per day")
-    print(f"Always-discharge baseline:         Rs {fair_avg:.2f} per day\n")
+    print(f"Original rule (time-of-day aware): Rs {orig_avg:.2f} per day\n")
 
     seed_avgs = []
     for seed in SEEDS:
@@ -78,16 +72,13 @@ def main():
         agent.load(best_path)
         avg = float(np.mean(eval_days(test_pairs, greedy)))
         seed_avgs.append(avg)
-        print(f"Seed {seed}: DQN Rs {avg:.2f}/day | vs rule {(orig_avg - avg) / orig_avg * 100:+.1f}% "
-              f"| vs always-discharge {(fair_avg - avg) / fair_avg * 100:+.1f}%")
+        print(f"Seed {seed}: DQN Rs {avg:.2f}/day | vs rule {(orig_avg - avg) / orig_avg * 100:+.1f}%")
 
     m, s = np.mean(seed_avgs), np.std(seed_avgs)
     print("\n" + "=" * 55)
     print(f"Original rule:      Rs {orig_avg:.2f} per day")
-    print(f"Always-discharge:   Rs {fair_avg:.2f} per day")
     print(f"DQN (5 seeds):      Rs {m:.2f} +/- {s:.2f} per day")
     print(f"DQN vs rule:        {(orig_avg - m) / orig_avg * 100:+.1f}%")
-    print(f"DQN vs always-discharge: {(fair_avg - m) / fair_avg * 100:+.1f}%")
 
 
 if __name__ == "__main__":

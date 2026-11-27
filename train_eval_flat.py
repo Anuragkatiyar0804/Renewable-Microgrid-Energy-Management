@@ -1,8 +1,7 @@
 """
-Fair test under the REAL flat UPPCL tariff (Rs 6/kWh).
-DQN trains and is tested in a flat-price world. Two baselines:
-  1) original rule EMS (as written, buys grid power to charge when SOC < 35%)
-  2) fair baseline: always solar first, then discharge, never charge from grid
+Test under the REAL flat UPPCL tariff (Rs 6/kWh).
+DQN trains and is tested in a flat-price world.
+Baseline: original rule EMS (as written, buys grid power to charge when SOC < 35%).
 """
 
 import os
@@ -27,10 +26,6 @@ class FlatEnv(RealEnv):
         return self.price_offpeak       # price never changes with the hour
 
 
-def always_discharge(state):
-    return 1                            # solar first, then battery, never grid-charge
-
-
 def day_cost(env, policy):
     state = env.reset()
     grid_wh, done = 0.0, False
@@ -51,13 +46,10 @@ def main():
     test_pairs = make_pairs(solar_pool["test"], load_pool["test"], 2)
     print(f"Validation days: {len(val_pairs)} | Test days: {len(test_pairs)} (never used in training)\n")
 
-    orig_costs = eval_days(test_pairs, rule_based_action)
-    fair_costs = eval_days(test_pairs, always_discharge)
-    orig_avg, fair_avg = float(np.mean(orig_costs)), float(np.mean(fair_costs))
-    print(f"Original rule-based:      Rs {orig_avg:.2f} per day")
-    print(f"Fair baseline (no grid charging): Rs {fair_avg:.2f} per day\n")
+    orig_avg = float(np.mean(eval_days(test_pairs, rule_based_action)))
+    print(f"Original rule-based:      Rs {orig_avg:.2f} per day\n")
 
-    seed_avgs, wins_fair = [], []
+    seed_avgs = []
     for seed in SEEDS:
         np.random.seed(seed)
         torch.manual_seed(seed)
@@ -81,21 +73,15 @@ def main():
                     agent.save(best_path)
 
         agent.load(best_path)
-        dqn_costs = eval_days(test_pairs, greedy)
-        avg = float(np.mean(dqn_costs))
+        avg = float(np.mean(eval_days(test_pairs, greedy)))
         seed_avgs.append(avg)
-        wins_fair.append(sum(d < f - 1e-9 for d, f in zip(dqn_costs, fair_costs)))
-        print(f"Seed {seed}: DQN Rs {avg:.2f}/day | vs original {(orig_avg - avg) / orig_avg * 100:+.1f}% "
-              f"| vs fair {(fair_avg - avg) / fair_avg * 100:+.1f}%")
+        print(f"Seed {seed}: DQN Rs {avg:.2f}/day | vs original {(orig_avg - avg) / orig_avg * 100:+.1f}%")
 
     m, s = np.mean(seed_avgs), np.std(seed_avgs)
     print("\n" + "=" * 55)
     print(f"Original rule-based:  Rs {orig_avg:.2f} per day")
-    print(f"Fair baseline:        Rs {fair_avg:.2f} per day")
     print(f"DQN (5 seeds):        Rs {m:.2f} +/- {s:.2f} per day")
     print(f"DQN vs original rule: {(orig_avg - m) / orig_avg * 100:+.1f}%")
-    print(f"DQN vs fair baseline: {(fair_avg - m) / fair_avg * 100:+.1f}%")
-    print(f"DQN cheaper than fair baseline on avg {np.mean(wins_fair):.0f}/{len(test_pairs)} test days")
 
 
 if __name__ == "__main__":

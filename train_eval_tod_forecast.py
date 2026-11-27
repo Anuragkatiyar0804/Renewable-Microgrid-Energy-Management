@@ -1,7 +1,7 @@
 """
 Time-of-day what-if (Rs 5 off-peak / Rs 8 peak) with a same-day FORECAST given to the DQN.
 The DQN sees 2 extra inputs: expected solar and expected load for the rest of the day
-(with forecast error). The baselines see the normal 6 inputs.
+(with forecast error). The baseline sees the normal 6 inputs.
 """
 
 import os
@@ -65,9 +65,7 @@ def main():
     print(f"Validation days: {len(val_pairs)} | Test days: {len(test_pairs)}\n")
 
     orig = float(np.mean(eval_days(test_pairs, lambda s: rule_based_action(s[:6]))))
-    fair = float(np.mean(eval_days(test_pairs, lambda s: 1)))
     print(f"Original rule:       Rs {orig:.2f} per day")
-    print(f"Always-discharge:    Rs {fair:.2f} per day")
     print(f"Best possible:       Rs {ORACLE_RS:.2f} per day (perfect foresight)\n")
 
     seed_avgs = []
@@ -96,17 +94,16 @@ def main():
         agent.load(best_path)
         avg = float(np.mean(eval_days(test_pairs, greedy)))
         seed_avgs.append(avg)
-        print(f"Seed {seed}: DQN Rs {avg:.2f}/day | vs always-discharge {(fair - avg) / fair * 100:+.1f}%")
+        print(f"Seed {seed}: DQN Rs {avg:.2f}/day | vs rule {(orig - avg) / orig * 100:+.1f}%")
 
     m, s = np.mean(seed_avgs), np.std(seed_avgs)
     print("\n" + "=" * 55)
-    print(f"Always-discharge:        Rs {fair:.2f} per day")
+    print(f"Original rule:           Rs {orig:.2f} per day")
     print(f"DQN with forecast (5 seeds): Rs {m:.2f} +/- {s:.2f} per day")
     print(f"Best possible:           Rs {ORACLE_RS:.2f} per day")
-    print(f"DQN vs always-discharge: {(fair - m) / fair * 100:+.1f}%")
-    print(f"Share of possible savings captured: {(fair - m) / (fair - ORACLE_RS) * 100:.0f}%")
+    print(f"DQN vs rule:             {(orig - m) / orig * 100:+.1f}%")
+    print(f"Share of possible savings captured: {(orig - m) / (orig - ORACLE_RS) * 100:.0f}%")
 
 
 if __name__ == "__main__":
     main()
-

@@ -1,6 +1,6 @@
 """
 Show the final results WITHOUT retraining.
-Loads the saved models, runs them and the baselines on the same 66 unseen test days,
+Loads the saved models, runs them and the baseline on the same 66 unseen test days,
 prints the table and saves results/real_data_comparison.png.
 Needs: lucknow_solar_2024.csv, household_load_all.csv and the models/ folder.
 """
@@ -33,7 +33,6 @@ def main():
     print(f"Testing on {len(pairs)} unseen days (real Lucknow solar + real household load)\n")
 
     rule = lambda s: rule_based_action(s[:6])
-    always = lambda s: 1
     settings = [
         ("Flat Rs 6/kWh", flat_eval, "dqn_flat", 6),
         ("Peak/off-peak\nRs 5 / Rs 8", tod_eval, "dqn_tod", 6),
@@ -43,22 +42,21 @@ def main():
     rows = []
     for name, fn, prefix, dim in settings:
         orig = float(np.mean(fn(pairs, rule)))
-        fair = float(np.mean(fn(pairs, always)))
         m, sd = dqn_result(fn, pairs, prefix, dim)
-        rows.append((name, orig, fair, m, sd))
+        rows.append((name, orig, m, sd))
 
-    print(f"{'Setting':<28}{'Original rule':>14}{'Always-discharge':>18}{'DQN (5 seeds)':>20}")
-    print("-" * 80)
-    for name, orig, fair, m, sd in rows:
-        print(f"{name.replace(chr(10), ' '):<28}{orig:>14.2f}{fair:>18.2f}{m:>14.2f} +/- {sd:.2f}")
+    print(f"{'Setting':<28}{'Original rule':>14}{'DQN (5 seeds)':>20}{'DQN vs rule':>14}")
+    print("-" * 76)
+    for name, orig, m, sd in rows:
+        saving = (orig - m) / orig * 100
+        print(f"{name.replace(chr(10), ' '):<28}{orig:>14.2f}{m:>14.2f} +/- {sd:.2f}{saving:>+13.1f}%")
     print(f"\nBest possible (perfect foresight, peak/off-peak): Rs {ORACLE_RS:.2f} per day")
 
     x = np.arange(len(rows))
-    w = 0.25
+    w = 0.35
     fig, ax = plt.subplots(figsize=(9, 5.5))
-    ax.bar(x - w, [r[1] for r in rows], w, label="Original rule", color="tab:orange")
-    ax.bar(x, [r[2] for r in rows], w, label="Always-discharge", color="tab:gray")
-    ax.bar(x + w, [r[3] for r in rows], w, yerr=[r[4] for r in rows], capsize=4,
+    ax.bar(x - w / 2, [r[1] for r in rows], w, label="Original rule", color="tab:orange")
+    ax.bar(x + w / 2, [r[2] for r in rows], w, yerr=[r[3] for r in rows], capsize=4,
            label="DQN (5 seeds)", color="tab:blue")
     ax.hlines(ORACLE_RS, 0.6, 2.4, colors="green", linestyles="--",
               label=f"Best possible, peak/off-peak (Rs {ORACLE_RS:.2f})")
